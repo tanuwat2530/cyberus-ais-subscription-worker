@@ -2,11 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
-
-	"encoding/json"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -24,12 +23,11 @@ func backgroundWorker() {
 	var ctx = context.Background()
 	var LIMIT_KEY = 10
 	var cursor uint64 = 0
-	var matchPattern = "subscription-callback:*" // Pattern to match keys
-	var count = int64(100)                       // Limit to 100 keys per scan
+	var matchPattern = "subscription-callback-api:*" // Pattern to match keys
+	var count = int64(100)                           // Limit to 100 keys per scan
 
 	fmt.Println("##### BACKGROUUND PROCESS RUNNING #####")
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
+
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "127.0.0.1:6379", // Change if needed
 		Password: "",               // No password by default
@@ -39,7 +37,7 @@ func backgroundWorker() {
 
 	var wg sync.WaitGroup
 
-	for range ticker.C {
+	for {
 
 		// Perform the scan with the match pattern and count
 		keys, newCursor, err := rdb.Scan(ctx, cursor, matchPattern, count).Result()
@@ -95,22 +93,19 @@ func backgroundWorker() {
 
 // Function that simulates work for a thread
 func threadWorker(id int, wg *sync.WaitGroup, jsonString string) {
-	type DataRequest struct {
-		ClientIP    string `json:"ClientIP"`
-		ProviderUrl string `json:"ProviderUrl"`
-		Action      string `json:"action"`
-		Code        string `json:"code"`
-		Desc        string `json:"desc"`
-		Media       string `json:"media"`
-		Msisdn      string `json:"msisdn"`
-		Operator    string `json:"operator"`
-		Refid       string `json:"refid"`
-		Shortcode   string `json:"shortcode"`
-		Timestamp   string `json:"timestamp"`
-		Token       string `json:"token"`
-		Tranref     string `json:"tranref"`
-		ClientID    string `json:"ClientID"`
-		RedisKey    string `Json:"RedisKey"`
+	type TransactionData struct {
+		Msisdn       string `json:"msisdn"`
+		Shortcode    string `json:"short-code"`
+		Operator     string `json:"operator"`
+		Action       string `json:"action"`
+		Code         string `json:"code"`
+		Desc         string `json:"desc"`
+		Timestamp    int    `json:"timestamp"`
+		TranRef      string `json:"tran-ref"`
+		RefId        string `json:"ref-id"`
+		Media        string `json:"media"`
+		Token        string `json:"token"`
+		ReturnStatus string `json:"cuberus-return"`
 	}
 
 	var ctx = context.Background()
@@ -125,18 +120,32 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string) {
 	fmt.Printf("Worker No : %d\n", id)
 
 	// Convert struct to JSON string
-	var dataRequest DataRequest
-	err := json.Unmarshal([]byte(jsonString), &dataRequest)
+	var transactionData TransactionData
+	err := json.Unmarshal([]byte(jsonString), &transactionData)
 	if err != nil {
 		fmt.Println("JSON Marshal error:", err)
 	}
-	fmt.Println("sending request : " + dataRequest.RedisKey)
 
-	redis_key := "send-request:" + dataRequest.RedisKey
+	// // Print the data to the console
+	// fmt.Println("##### Insert into Database #####")
+	// fmt.Println("Msisdn : " + transactionData.Msisdn)
+	// fmt.Println("Shortcode : " + transactionData.Shortcode)
+	// fmt.Println("Operator  : " + transactionData.Operator)
+	// fmt.Println("Action  : " + transactionData.Action)
+	// fmt.Println("Code  : " + transactionData.Code)
+	// fmt.Println("Desc  : " + transactionData.Desc)
+	//fmt.Println("Timestamp  : " + strconv.FormatInt(int64(transactionData.Timestamp)))
+	// fmt.Println("TranRef  : " + transactionData.TranRef)
+	// fmt.Println("Action  : " + transactionData.Action)
+	// fmt.Println("RefId  : " + transactionData.RefId)
+	// fmt.Println("Media  : " + transactionData.Media)
+	// fmt.Println("Token  : " + transactionData.Token)
+	// fmt.Println("CyberusReturn  : " + transactionData.ReturnStatus)
+
+	redis_key := "transaction-log-worker:" + transactionData.Media + ":" + transactionData.RefId
 	ttl := 240 * time.Hour // expires in 10 day
-
 	// Set key with TTL
-	err = rdb.Set(ctx, redis_key, "return", ttl).Err()
+	err = rdb.Set(ctx, redis_key, jsonString, ttl).Err()
 	if err != nil {
 		fmt.Println("Redis SET error:", err)
 
