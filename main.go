@@ -24,7 +24,7 @@ func main() {
 func backgroundWorker() {
 
 	var ctx = context.Background()
-	//var LIMIT_KEY = 10
+	var WAIT_INTERVAL = (17 * time.Second)
 	var cursor uint64 = 0
 	var matchPattern = "subscription-callback-api:*" // Pattern to match keys
 	var count = int64(100)                           // Limit to 100 keys per scan
@@ -126,7 +126,7 @@ func backgroundWorker() {
 		// If the cursor is 0, then the scan is complete
 		if cursor == 0 {
 			fmt.Println("Next scan in 10 sec.")
-			time.Sleep(10 * time.Second)
+			time.Sleep(WAIT_INTERVAL)
 			//break
 		}
 	}
@@ -149,7 +149,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 		RefId        string `json:"ref-id"`
 		Media        string `json:"media"`
 		Token        string `json:"token"`
-		ReturnStatus string `json:"cuberus-return"`
+		ReturnStatus string `json:"cyberus-return"`
 	}
 
 	//Table name on database
@@ -157,7 +157,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 		ID            string `gorm:"primaryKey"`
 		Action        string `gorm:"column:action"`
 		Code          string `gorm:"column:code"`
-		CuberusReturn string `gorm:"column:cuberus_return"`
+		CyberusReturn string `gorm:"column:cyberus_return"`
 		Description   string `gorm:"column:description"`
 		Media         string `gorm:"column:media"`
 		Msisdn        string `gorm:"column:msisdn"`
@@ -200,7 +200,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 		ID:            subscriptionData.RefId,
 		Action:        subscriptionData.Action,
 		Code:          subscriptionData.Code,
-		CuberusReturn: subscriptionData.ReturnStatus,
+		CyberusReturn: subscriptionData.ReturnStatus,
 		Description:   subscriptionData.Desc,
 		Media:         subscriptionData.Media,
 		Msisdn:        subscriptionData.Msisdn,
