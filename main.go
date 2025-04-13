@@ -49,9 +49,9 @@ func backgroundWorker() {
 		log.Fatal("Failed to get generic database object:", err)
 	}
 	// Set connection pool settings
-	sqlDB.SetMaxOpenConns(100)                 // Maximum number of open connections
-	sqlDB.SetMaxIdleConns(10)                  // Maximum number of idle connections
-	sqlDB.SetConnMaxLifetime(60 * time.Minute) // Connection max lifetime
+	sqlDB.SetMaxOpenConns(100)                // Maximum number of open connections
+	sqlDB.SetMaxIdleConns(10)                 // Maximum number of idle connections
+	sqlDB.SetConnMaxLifetime(5 * time.Minute) // Connection max lifetime
 
 	var wg sync.WaitGroup
 
@@ -137,7 +137,7 @@ func backgroundWorker() {
 // Function that simulates work for a thread
 func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Client, ctx context.Context, db *gorm.DB) error {
 
-	type TransactionData struct {
+	type SubscriptionData struct {
 		Msisdn       string `json:"msisdn"`
 		Shortcode    string `json:"short-code"`
 		Operator     string `json:"operator"`
@@ -153,7 +153,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 	}
 
 	//Table name on database
-	type transaction_logs struct {
+	type subscription_logs struct {
 		ID            string `gorm:"primaryKey"`
 		Action        string `gorm:"column:action"`
 		Code          string `gorm:"column:code"`
@@ -171,11 +171,11 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 	//	fmt.Printf("Worker No : %d\n start", id)
 
 	// Convert struct to JSON string
-	var transactionData TransactionData
-	errTransactionData := json.Unmarshal([]byte(jsonString), &transactionData)
-	if errTransactionData != nil {
-		fmt.Println("JSON Marshal error : ", errTransactionData)
-		return fmt.Errorf("JSON DECODE ERROR : " + errTransactionData.Error())
+	var subscriptionData SubscriptionData
+	errSubscriptionData := json.Unmarshal([]byte(jsonString), &subscriptionData)
+	if errSubscriptionData != nil {
+		fmt.Println("JSON Marshal error : ", errSubscriptionData)
+		return fmt.Errorf("JSON DECODE ERROR : " + errSubscriptionData.Error())
 	}
 
 	// // Print the data to the console
@@ -196,20 +196,20 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 
 	//defer wg.Done() // Mark this goroutine as done when it exits
 
-	logEntry := transaction_logs{
-		ID:            transactionData.RefId,
-		Action:        transactionData.Action,
-		Code:          transactionData.Code,
-		CuberusReturn: transactionData.ReturnStatus,
-		Description:   transactionData.Desc,
-		Media:         transactionData.Media,
-		Msisdn:        transactionData.Msisdn,
-		Operator:      transactionData.Operator,
-		RefID:         transactionData.RefId,
-		ShortCode:     transactionData.Shortcode,
-		Timestamp:     int64(transactionData.Timestamp),
-		Token:         transactionData.Token,
-		TranRef:       transactionData.TranRef,
+	logEntry := subscription_logs{
+		ID:            subscriptionData.RefId,
+		Action:        subscriptionData.Action,
+		Code:          subscriptionData.Code,
+		CuberusReturn: subscriptionData.ReturnStatus,
+		Description:   subscriptionData.Desc,
+		Media:         subscriptionData.Media,
+		Msisdn:        subscriptionData.Msisdn,
+		Operator:      subscriptionData.Operator,
+		RefID:         subscriptionData.RefId,
+		ShortCode:     subscriptionData.Shortcode,
+		Timestamp:     int64(subscriptionData.Timestamp),
+		Token:         subscriptionData.Token,
+		TranRef:       subscriptionData.TranRef,
 	}
 
 	if errInsertDB := db.Create(&logEntry).Error; errInsertDB != nil {
@@ -217,7 +217,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 		return fmt.Errorf(errInsertDB.Error())
 	}
 
-	redis_set_key := "transaction-log-worker:" + transactionData.Media + ":" + transactionData.RefId
+	redis_set_key := "transaction-log-worker:" + subscriptionData.Media + ":" + subscriptionData.RefId
 	ttl := 240 * time.Hour // expires in 10 day
 	// Set key with TTL
 	errSetRedis := rdb.Set(ctx, redis_set_key, jsonString, ttl).Err()
@@ -226,7 +226,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 		return fmt.Errorf("REDIS SET ERROR : " + errSetRedis.Error())
 	}
 
-	redis_del_key := "subscription-callback-api:" + transactionData.Media + ":" + transactionData.RefId
+	redis_del_key := "subscription-callback-api:" + subscriptionData.Media + ":" + subscriptionData.RefId
 	rdb.Del(ctx, redis_del_key).Result()
 
 	wg.Done()
