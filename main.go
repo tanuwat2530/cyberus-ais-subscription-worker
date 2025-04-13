@@ -29,7 +29,7 @@ func backgroundWorker() {
 	var matchPattern = "subscription-callback-api:*" // Pattern to match keys
 	var count = int64(100)                           // Limit to 100 keys per scan
 
-	fmt.Println("##### BACKGROUUND PROCESS RUNNING #####")
+	fmt.Println("##### SUBSCRIPTION WORKER RUNNING #####")
 	//config redis pool
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "127.0.0.1:6379", // Change if needed
