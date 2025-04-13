@@ -1,4 +1,4 @@
-module CyberusAisCpapConsumer
+module cyberus/subscription-worker
 
 go 1.22.2
 
