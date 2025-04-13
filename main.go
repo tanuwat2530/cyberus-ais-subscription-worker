@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"sync"
 	"time"
 
 	"github.com/redis/go-redis/v9"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -54,11 +57,12 @@ func backgroundWorker() {
 					valJson, err := rdb.Get(ctx, keys[i]).Result()
 					if err != nil {
 						fmt.Println("Error getting value:", err)
+
 					} else {
 						//fmt.Println("Value:", val)
 						// Start multiple goroutines (threads)
 						wg.Add(1)
-						go threadWorker(i, &wg, valJson)
+						go threadWorker(i, &wg, valJson, rdb, ctx)
 						rdb.Del(ctx, keys[i]).Result()
 						// Wait for all goroutines to finish
 					}
@@ -71,11 +75,12 @@ func backgroundWorker() {
 				valJson, err := rdb.Get(ctx, keys[0]).Result()
 				if err != nil {
 					fmt.Println("Error getting value:", err)
+
 				} else {
 					//fmt.Println("Value:", val)
 					// Start multiple goroutines (threads)
 					wg.Add(1)
-					go threadWorker(0, &wg, valJson)
+					err := go threadWorker(0, &wg, valJson, rdb, ctx)
 					rdb.Del(ctx, keys[0]).Result()
 					// Wait for all goroutines to finish
 				}
@@ -92,7 +97,8 @@ func backgroundWorker() {
 }
 
 // Function that simulates work for a thread
-func threadWorker(id int, wg *sync.WaitGroup, jsonString string) {
+func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Client, ctx context.Context) error {
+
 	type TransactionData struct {
 		Msisdn       string `json:"msisdn"`
 		Shortcode    string `json:"short-code"`
@@ -108,27 +114,35 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string) {
 		ReturnStatus string `json:"cuberus-return"`
 	}
 
-	var ctx = context.Background()
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "127.0.0.1:6379", // Change if needed
-		Password: "",               // No password by default
-		DB:       0,                // Default DB
-		PoolSize: 10,               //Connection pools
-	})
-
-	defer wg.Done() // Mark this goroutine as done when it exits
+	//Table name on database
+	type transaction_logs struct {
+		ID            string `gorm:"primaryKey"`
+		Action        string `gorm:"column:action"`
+		Code          string `gorm:"column:code"`
+		CuberusReturn string `gorm:"column:cuberus_return"`
+		Description   string `gorm:"column:description"`
+		Media         string `gorm:"column:media"`
+		Msisdn        string `gorm:"column:msisdn"`
+		Operator      string `gorm:"column:operator"`
+		RefID         string `gorm:"column:ref_id"`
+		ShortCode     string `gorm:"column:short_code"`
+		Timestamp     int64  `gorm:"column:timestamp"`
+		Token         string `gorm:"column:token"`
+		TranRef       string `gorm:"column:tran_ref"`
+	}
 	fmt.Printf("Worker No : %d\n", id)
 
 	// Convert struct to JSON string
 	var transactionData TransactionData
-	err := json.Unmarshal([]byte(jsonString), &transactionData)
-	if err != nil {
-		fmt.Println("JSON Marshal error:", err)
+	errTransactionData := json.Unmarshal([]byte(jsonString), &transactionData)
+	if errTransactionData != nil {
+		fmt.Println("JSON Marshal error : ", errTransactionData)
+
 	}
 
 	// // Print the data to the console
-	// fmt.Println("##### Insert into Database #####")
-	// fmt.Println("Msisdn : " + transactionData.Msisdn)
+	//fmt.Println("##### Insert into Database #####")
+	//fmt.Println("Msisdn : " + transactionData.Msisdn)
 	// fmt.Println("Shortcode : " + transactionData.Shortcode)
 	// fmt.Println("Operator  : " + transactionData.Operator)
 	// fmt.Println("Action  : " + transactionData.Action)
@@ -142,14 +156,42 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string) {
 	// fmt.Println("Token  : " + transactionData.Token)
 	// fmt.Println("CyberusReturn  : " + transactionData.ReturnStatus)
 
+	defer wg.Done() // Mark this goroutine as done when it exits
+	dsn := "host=localhost user=root password=11111111 dbname=cyberus_db port=5432 sslmode=disable TimeZone=Asia/Bangkok search_path=root@cyberus"
+	db, errDatabase := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if errDatabase != nil {
+		log.Fatal("Failed to connect to database:", errDatabase)
+	}
+	logEntry := transaction_logs{
+		ID:            transactionData.RefId,
+		Action:        transactionData.Action,
+		Code:          transactionData.Code,
+		CuberusReturn: transactionData.ReturnStatus,
+		Description:   transactionData.Desc,
+		Media:         transactionData.Media,
+		Msisdn:        transactionData.Msisdn,
+		Operator:      transactionData.Operator,
+		RefID:         transactionData.RefId,
+		ShortCode:     transactionData.Shortcode,
+		Timestamp:     int64(transactionData.Timestamp),
+		Token:         transactionData.Token,
+		TranRef:       transactionData.TranRef,
+	}
+
+	if err := db.Create(&logEntry).Error; err != nil {
+		fmt.Println("Error insert : " + err.Error())
+	} else {
+		fmt.Println("Insert successful")
+	}
+
 	redis_key := "transaction-log-worker:" + transactionData.Media + ":" + transactionData.RefId
 	ttl := 240 * time.Hour // expires in 10 day
 	// Set key with TTL
-	err = rdb.Set(ctx, redis_key, jsonString, ttl).Err()
-	if err != nil {
-		fmt.Println("Redis SET error:", err)
-
+	errRedis := rdb.Set(ctx, redis_key, jsonString, ttl).Err()
+	if errRedis != nil {
+		fmt.Println("Redis SET error:", errRedis)
 	}
 
-	fmt.Printf("Worker No : %d SET REDIS finished\n", id)
+	fmt.Printf("Worker No : %d finished\n", id)
+	return fmt.Errorf("THROW EXCEPTION")
 }
