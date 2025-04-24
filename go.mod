@@ -1,4 +1,4 @@
-module cyberus/subscription-worker
+module cyberus/ais-subscription-worker
 
 go 1.22.2
 
