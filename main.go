@@ -26,8 +26,8 @@ func backgroundWorker() {
 	var ctx = context.Background()
 	var WAIT_INTERVAL = (17 * time.Second)
 	var cursor uint64 = 0
-	var matchPattern = "subscription-callback-api:*" // Pattern to match keys
-	var count = int64(100)                           // Limit to 100 keys per scan
+	var matchPattern = "ais-subscription-callback-api:*" // Pattern to match keys
+	var count = int64(100)                               // Limit to 100 keys per scan
 
 	fmt.Println("##### SUBSCRIPTION WORKER RUNNING #####")
 	//config redis pool
@@ -125,10 +125,11 @@ func backgroundWorker() {
 		cursor = newCursor
 		// If the cursor is 0, then the scan is complete
 		if cursor == 0 {
-			fmt.Println("Next scan in 10 sec.")
+			fmt.Println("Wait for next scan")
 			time.Sleep(WAIT_INTERVAL)
 			//break
 		}
+		wg.Wait() // Block here until all goroutines call Done()
 	}
 	//}
 
@@ -153,7 +154,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 	}
 
 	//Table name on database
-	type subscription_logs struct {
+	type ais_subscription_logs struct {
 		ID            string `gorm:"primaryKey"`
 		Action        string `gorm:"column:action"`
 		Code          string `gorm:"column:code"`
@@ -196,7 +197,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 
 	//defer wg.Done() // Mark this goroutine as done when it exits
 
-	logEntry := subscription_logs{
+	logEntry := ais_subscription_logs{
 		ID:            subscriptionData.RefId,
 		Action:        subscriptionData.Action,
 		Code:          subscriptionData.Code,
@@ -217,7 +218,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 		return fmt.Errorf(errInsertDB.Error())
 	}
 
-	redis_set_key := "transaction-log-worker:" + subscriptionData.Media + ":" + subscriptionData.RefId
+	redis_set_key := "ais-transaction-log-worker:" + subscriptionData.Media + ":" + subscriptionData.RefId
 	ttl := 240 * time.Hour // expires in 10 day
 	// Set key with TTL
 	errSetRedis := rdb.Set(ctx, redis_set_key, jsonString, ttl).Err()
@@ -226,7 +227,7 @@ func threadWorker(id int, wg *sync.WaitGroup, jsonString string, rdb *redis.Clie
 		return fmt.Errorf("REDIS SET ERROR : " + errSetRedis.Error())
 	}
 
-	redis_del_key := "subscription-callback-api:" + subscriptionData.Media + ":" + subscriptionData.RefId
+	redis_del_key := "ais-subscription-callback-api:" + subscriptionData.Media + ":" + subscriptionData.RefId
 	rdb.Del(ctx, redis_del_key).Result()
 
 	wg.Done()
